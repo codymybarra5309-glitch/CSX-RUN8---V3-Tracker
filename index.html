@@ -1,13 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Run8 Dispatch Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
+        #workspace { display: flex; width: 100vw; height: 100vh; transition: all 0.25s ease; }
+        #sidebar { width: 320px; height: 100%; background: #111; color: #fff; display: flex; flex-direction: column; box-shadow: 2px 0 10px rgba(0,0,0,0.5); z-index: 1000; transition: margin-left 0.25s ease; }
+        #map { flex-grow: 1; height: 100%; background: #1a1a1a; }
+        .sidebar-collapsed #sidebar { margin-left: -320px; }
+        #sidebar-toggle { position: absolute; left: 320px; top: 15px; z-index: 1001; background: #222; color: white; border: 1px solid #444; padding: 10px 12px; cursor: pointer; font-weight: bold; border-radius: 0 4px 4px 0; transition: left 0.25s ease; }
+        .sidebar-collapsed #sidebar-toggle { left: 0; }
+        .search-container { padding: 15px; background: #1a1a1a; border-bottom: 1px solid #333; }
+        .search-box { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; }
+        .list-container { flex-grow: 1; overflow-y: auto; padding: 10px; }
+        .sub-group { margin-bottom: 15px; background: #1a1a1a; border-radius: 4px; overflow: hidden; border: 1px solid #222; }
+        .sub-header { background: #222; padding: 10px 15px; font-weight: bold; font-size: 0.9em; letter-spacing: 1px; color: #aaa; border-bottom: 1px solid #333; }
+        .train-card { padding: 12px 15px; border-bottom: 1px solid #222; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.15s; }
+        .train-card:hover { background: #252525; }
+        .train-symbol { font-weight: bold; color: #fff; font-size: 1.1em; }
+        .train-meta { font-size: 0.8em; color: #888; margin-top: 3px; }
+        .train-badge { padding: 3px 6px; font-size: 0.75em; font-weight: bold; border-radius: 3px; }
+        .badge-player { background: rgba(39, 174, 96, 0.2); color: #2ecc71; border: 1px solid #2ecc71; }
+        .badge-ai { background: rgba(142, 68, 173, 0.2); color: #9b59b6; border: 1px solid #9b59b6; }
+        .footer-container { padding: 15px; background: #1a1a1a; border-top: 1px solid #333; }
+        .theme-btn { width: 100%; padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .theme-btn:hover { background: #444; }
+        .depot-popup .leaflet-popup-content-wrapper { background: #111; color: #fff; border-radius: 4px; border: 1px solid #333; padding: 0; }
+        .depot-popup .leaflet-popup-tip { background: #111; border: 1px solid #333; }
+        .popup-tbl { width: 100%; font-family: monospace; border-collapse: collapse; }
+        .popup-tbl td { padding: 4px 8px; border-bottom: 1px solid #222; }
+        .popup-lbl { color: #888; font-weight: bold; width: 45%; }
+    </style>
+</head>
+<body>
+
+<div id="workspace">
+    <button id="sidebar-toggle" onclick="toggleSidebar()">◀</button>
+    
+    <div id="sidebar">
+        <div class="search-container">
+            <input type="text" id="trainSearch" class="search-box" placeholder="Filter by symbol or sub..." oninput="filterTrains()">
+        </div>
+        <div class="list-container" id="accordion"></div>
+        <div class="footer-container">
+            <button id="themeBtn" class="theme-btn" onclick="toggleTheme()">MONO LIGHT MODE</button>
+        </div>
+    </div>
+
+    <div id="map"></div>
+</div>
+
 <script>
-    const map = L.map('map', { zoomControl: true, maxZoom: 18, minZoom: 7 }).setView([30.9500, -82.0000], 8);
+    const map = L.map('map', { zoomControl: true, maxZoom: 18, minZoom: 7 }).setView([31.206, -82.361], 9);
     let tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
     map.zoomControl.setPosition('bottomright');
 
     const trainLayerGroup = L.layerGroup().addTo(map);
     let markerRegistry = {};
-
-    // Updated: Live Data Fetching Logic
     window.activeServerData = [];
+
+    // --- NEW: CHOPPED UP CSX A-LINE COORDINATE DATA ARRAY ---
+    const WaycrossSubCoords = [
+        [[31.0145737240926,-82.1384799613932], [31.0434795798217,-82.1627210702367], [31.0458700817452,-82.1647323018555], [31.046562010187,-82.1653386306514], [31.0469311488331,-82.1657101238034], [31.0477375080337,-82.1665502215459], [31.0505674103935,-82.1700873612553], [31.0912324967442,-82.2204814006876], [31.1290118607646,-82.267512518215], [31.1688182128115,-82.3170565520874], [31.1970630163813,-82.3522451463288], [31.2036261781708,-82.3606021824156], [31.2050049625758,-82.3619028658737], [31.2054588648578,-82.3620729201052], [31.2058563862169,-82.3621127361293], [31.2063765438391,-82.3620109809133], [31.2068821908507,-82.3617387808617], [31.2073023866774,-82.3613558179249], [31.2111586505243,-82.3565644215544], [31.2191912336451,-82.3464353250258], [31.2610104233776,-82.2938606761871], [31.2710884845567,-82.2813372958832], [31.2785762847442,-82.2717752955421], [31.2989134297118,-82.2462930972927], [31.3088345596923,-82.2338316923603], [31.3171091933274,-82.2234743370334], [31.3293489047575,-82.2081018646534], [31.3435400082457,-82.1902799599807], [31.3593486874433,-82.1704262893386], [31.3858481021873,-82.1371105246723], [31.4016268004565,-82.1173107170288], [31.4130572369125,-82.1029677141835], [31.4309907010377,-82.080336534479], [31.4472553892483,-82.0598583376434], [31.464554402201,-82.0405046652227], [31.4694283791915,-82.034941728897], [31.493069042522,-82.0084442725526], [31.5048548706681,-81.9952134039427], [31.5800983743523,-81.9106219020524], [31.6013232538256,-81.8867588652781], [31.6026751966063,-81.8851928236015]],
+        [[31.2071806044315,-82.3615080386167], [31.2067872687391,-82.3620815852814], [31.2065014070146,-82.362790864911], [31.2064291989569,-82.3632944757955], [31.2064225573724,-82.3638544665651], [31.2065692604635,-82.3645760854103], [31.2069142473847,-82.3653138284697], [31.2073197861686,-82.3661682086527], [31.2077045216284,-82.3667846133057], [31.2080841477845,-82.367226160264], [31.208459169689,-82.3675323118233], [31.2091830740064,-82.3678718603895], [31.2145232073343,-82.3696005783371], [31.2154482025016,-82.3700276942196], [31.2159172419749,-82.370321416754], [31.2164815085149,-82.3708793716951], [31.2177297003867,-82.3726451861094], [31.2182326387464,-82.3732747304084], [31.2187546316443,-82.3737061309399], [31.2191631380758,-82.3739310744016], [31.2198059919285,-82.3741731981661], [31.2205035840831,-82.3742399110023], [31.2206473985086,-82.3742521437819], [31.2214432007864,-82.3741099221267], [31.2238941134574,-82.3731200946818], [31.2255253910199,-82.3722983870561], [31.2275773431471,-82.3708904836277], [31.2298859595674,-82.3695236119261], [31.2310225612773,-82.3688555407901], [31.2321247691545,-82.36879007359], [31.2332316663218,-82.3689693150163], [31.2412053455163,-82.3720205440165], [31.2564022218338,-82.37775828159], [31.2755481532894,-82.38495978858], [31.2936323272431,-82.3917474437252], [31.2963191073572,-82.3925419699303], [31.2977580381428,-82.3923263667646], [31.299459600142,-82.3915966073887], [31.3122181081942,-82.3867164979556], [31.3132093133791,-82.3864053709674], [31.313293056977,-82.3863878472449], [31.313349005853,-82.3863870894081], [31.3149538656952,-82.3862687130174], [31.3150376382969,-82.38626759535], [31.3162673041079,-82.3865199556552], [31.3188101563454,-82.3880942888303], [31.3206228289178,-82.390899198209], [31.3344625136993,-82.4114741553568], [31.3353096015476,-82.4125648579899], [31.3364336558985,-82.413936547536], [31.3397238042311,-82.416339062654], [31.3505256366027,-82.4237477011186], [31.3513481656295,-82.4244626625322], [31.3530170811862,-82.4260749845114], [31.3543468045895,-82.4276072001399], [31.3563679178721,-82.4305175081864], [31.3658241664198,-82.4447872206607], [31.3665394059165,-82.4459614134386], [31.368448034233,-82.4476137758743], [31.3772527867728,-82.4545989579255], [31.3951688362686,-82.468409488516], [31.410547496342,-82.4805264019428]],
+        [[31.2073126141842,-82.3661456299247], [31.2069895520184,-82.3656073871561], [31.2067246152318,-82.3652727511825], [31.2064182113347,-82.3650102363914], [31.2060507014689,-82.3648154675354], [31.2055927047416,-82.364706291174], [31.2050757653849,-82.3647634614503], [31.2046169175792,-82.3649546033033], [31.2042295248653,-82.365276808498], [31.2038496526562,-82.3656696875564], [31.207303255082,-82.3613533981736]],
+        [[31.2036229402555,-82.3606334720912], [31.2045456733152,-82.3616048229657], [31.2049935012865,-82.3625187135014], [31.2040567474517,-82.36323700207], [31.2044493971403,-82.3647618351909], [31.2038588097193,-82.365468854595], [31.202799477809,-82.3670312927389], [31.2023233692763,-82.3676798700666], [31.2015420491903,-82.368756703052], [31.1995076575014,-82.3713736921082], [31.1934843294933,-82.3789866626499], [31.1789635489592,-82.3976669811258], [31.163299612894,-82.4162603219893], [31.1592629067702,-82.4228973069213], [31.1563981727076,-82.4298148048734], [31.1349321718626,-82.486438460971], [31.1022855232094,-82.5726847233597], [31.0965285281284,-82.587904271241], [31.0927141829918,-82.5979121973418]],
+        [[31.2104585012253,-82.3574068344109], [31.2108938231504,-82.3571447352515], [31.2114954982871,-82.3570103899943], [31.2122767813249,-82.3569823702168], [31.2129501462758,-82.357216909663], [31.2133238155869,-82.357460591687], [31.2138056469272,-82.3579303339166], [31.2142674850295,-82.3587530393616], [31.2146531942413,-82.3600479336212], [31.2152258646603,-82.3621640406559], [31.2184626970434,-82.3734132753905], [31.2190348768899,-82.3750227343545], [31.2225460662094,-82.3874731111224]],
+        [[31.211776693916,-82.3557726405081], [31.2124343769924,-82.3546015869624], [31.2125772203449,-82.3530807762157], [31.2123014653321,-82.3518351370152], [31.2108404299631,-82.3466871062565], [31.2022629826249,-82.3177246209017]],
+        [[31.7658140648043,-81.6416963740513], [31.6790451515947,-81.8034478300831], [31.6782024500325,-81.8046129426027], [31.6773013488474,-81.8057641594115], [31.6765603036773,-81.8065465086329], [31.6654053404972,-81.8173808376565], [31.6476784142568,-81.8345508935283], [31.6420568025866,-81.8407472747978], [31.6026731368451,-81.8851956280691], [31.601727587316,-81.8862420388064], [31.6007696064796,-81.8872004559716], [31.6002888753796,-81.8875215615915], [31.5994782579976,-81.8879207536035], [31.5963864470691,-81.8887235932894], [31.5920258026105,-81.8898494130819], [31.5909858697109,-81.8901319190753], [31.0603406107801,-82.0163808086325]],
+        [[31.5955678250694,-81.8932304774627], [31.5959836464882,-81.892664548877], [31.5961682345256,-81.8922578131764], [31.5962844417847,-81.8915200060576], [31.596247484282,-81.8910542623971], [31.5960898131793,-81.8905386320755], [31.5958642367919,-81.8901016614514], [31.595590072052,-81.8897649057477], [31.5951759195099,-81.8895064946146], [31.5949138632859,-81.889380440421], [31.5946420523263,-81.8893247081076], [31.5941836881769,-81.8893274098826], [31.593773533117,-81.8893939563863]],
+        [[31.6464183336625,-81.8359473721049], [31.6474030823152,-81.8350289373526], [31.6482978389932,-81.8342032720265], [31.6486803818214,-81.8339037260462], [31.6494107756225,-81.8335463179638], [31.65015211382,-81.833304233099], [31.6514778024393,-81.833287354435], [31.6518447338948,-81.8334165223408], [31.652718389832,-81.8338612431493], [31.6548394960958,-81.8350750629744], [31.6551470317853,-81.8352893476608], [31.6556100362625,-81.8359261792003], [31.6560107546948,-81.8363200081133], [31.6567119955386,-81.836789730057], [31.6583748259015,-81.8390363887068]],
+        [[31.6555852566935,-81.8359091372475], [31.6559599981457,-81.8364318593228], [31.6561907096382,-81.8369780654041], [31.6563458178029,-81.8376919888949], [31.6563092493001,-81.8385211066556], [31.6560595094014,-81.8431608431037], [31.6560510641912,-81.8436798573833], [31.656169634165,-81.8443499547161], [31.6563988741546,-81.8449304589971], [31.6568648879147,-81.8456167348576], [31.6589183128315,-81.8485413001]],
+        [[31.5985847289715,-81.8674406720973], [31.6083908005123,-81.8787412539508], [31.6152951002427,-81.886690400697]]
+    ];
+
+    // --- NEW: FUNCTION TO RENDER TRACK GEOMETRY ---
+    function drawRailNetwork() {
+        WaycrossSubCoords.forEach(segment => {
+            L.polyline(segment, {
+                color: '#2c3e50',   // Match your specific choice
+                weight: 4,          // Track line width
+                opacity: 0.85,
+                interactive: true   // Allows the popup block below to process
+            }).addTo(map).bindPopup(function() {
+                return "<table width='248' class='routedata' align='left'><tr><td style='font-size:1.2em;line-height:14px;'><b>A-Line Route</b></td></tr><tr><td><b>Railroad:</b> CSX</td></tr></table>";
+            }, {offset: [0, 0]});
+        });
+    }
+
+    // Fire it up to lay the steel down immediately!
+    drawRailNetwork();
+
+    // Create Depot Custom Icon
+    const depotIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: `<div style="background-color:#e74c3c; width:12px; height:12px; border-radius:50%; border:2px solid white; box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+    });
 
     async function loadLiveData() {
         try {
@@ -22,7 +116,6 @@
         }
     }
 
-    // Set refresh interval to 5 seconds
     setInterval(loadLiveData, 5000);
     loadLiveData();
 
@@ -34,85 +127,71 @@
         setTimeout(() => { map.invalidateSize(); }, 260);
     }
 
-    function getTrainColorClass(speed, crewType) {
-        if (speed === 0) return "tag-stopped"; 
-        if (crewType === "PLAYER") return "tag-moving-player"; 
-        return "tag-moving-ai"; 
+    function getTrainColor(dir) {
+        if(dir === "Northbound" || dir === "Eastbound") return "#2ecc71";
+        if(dir === "Southbound" || dir === "Westbound") return "#3498db";
+        return "#f1c40f";
     }
 
-    function updateGlobalHUD(filteredData) {
-        let total = filteredData.length, moving = 0, stopped = 0, footage = 0, tonnage = 0;
-        filteredData.forEach(train => {
-            if (train.speed > 0) moving++; else stopped++;
-            footage += train.length; tonnage += train.weight;
-        });
-        document.getElementById('hudTotal').innerText = total;
-        document.getElementById('hudMoving').innerText = moving;
-        document.getElementById('hudStopped').innerText = stopped;
-        document.getElementById('hudFootage').innerText = footage.toLocaleString() + " FT";
-        document.getElementById('hudTonnage').innerText = tonnage.toLocaleString() + " TNS";
+    function focusTrain(symbol) {
+        const marker = markerRegistry[symbol];
+        if (marker) {
+            map.setView(marker.getLatLng(), 13);
+            marker.openPopup();
+        }
     }
 
-    function processTrackerData(searchQuery = "") {
+    function processTrackerData(filterQuery = "") {
         trainLayerGroup.clearLayers();
         markerRegistry = {};
-        const accordionContainer = document.getElementById('accordionContainer');
+        
+        const accordionContainer = document.getElementById('accordion');
         accordionContainer.innerHTML = '';
 
-        const filteredTrains = window.activeServerData.filter(t => !searchQuery || t.symbol.toLowerCase().includes(searchQuery.toLowerCase()));
-        updateGlobalHUD(filteredTrains);
+        const q = filterQuery.toLowerCase().trim();
+        const grouped = {};
 
-        const groupedSubdivisions = {};
-        filteredTrains.forEach(t => {
-            if (!groupedSubdivisions[t.subdivision]) groupedSubdivisions[t.subdivision] = [];
-            groupedSubdivisions[t.subdivision].push(t);
+        window.activeServerData.forEach(train => {
+            const symbolMatch = train.symbol.toLowerCase().includes(q);
+            const subMatch = train.subdivision.toLowerCase().includes(q);
+            
+            if (q && !symbolMatch && !subMatch) return;
+
+            if (!grouped[train.subdivision]) grouped[train.subdivision] = [];
+            grouped[train.subdivision].push(train);
         });
 
-        Object.keys(groupedSubdivisions).forEach(subName => {
-            const trains = groupedSubdivisions[subName];
+        Object.keys(grouped).sort().forEach(subName => {
             const subGroup = document.createElement('div');
             subGroup.className = 'sub-group';
-
-            const subHeader = document.createElement('div');
-            subHeader.className = 'sub-header';
-            subHeader.innerHTML = `<span>${subName}</span> <span class="train-count">${trains.length}</span>`;
-            subGroup.appendChild(subHeader);
+            
+            const header = document.createElement('div');
+            header.className = 'sub-header';
+            header.innerText = subName.toUpperCase();
+            subGroup.appendChild(header);
 
             const subContent = document.createElement('div');
-            subContent.className = 'sub-content';
-
-            trains.forEach(train => {
-                const colorClass = getTrainColorClass(train.speed, train.type);
-                const trainItem = document.createElement('div');
-                trainItem.className = 'train-item';
+            
+            grouped[subName].forEach(train => {
+                const card = document.createElement('div');
+                card.className = 'train-card';
+                card.onclick = () => focusTrain(train.symbol);
                 
-                let speedColor = train.speed > 0 ? (train.type === "PLAYER" ? "#00FF00" : "#66CCFF") : "#FF3333";
-
-                trainItem.innerHTML = `
-                    <div><span class="train-symbol-txt">${train.symbol}</span><span class="train-crew-txt">[Loco: ${train.leadLoco}]</span></div>
-                    <span style="color: ${speedColor}; font-weight: bold;">${train.speed === 0 ? 'STOP' : train.speed + ' MPH'}</span>
+                card.innerHTML = `
+                    <div>
+                        <div class="train-symbol">${train.symbol}</div>
+                        <div class="train-meta">${train.dir || 'UNK'} • Lead ${train.leadLoco}</div>
+                    </div>
+                    <span class="train-badge ${train.type === 'PLAYER' ? 'badge-player' : 'badge-ai'}">${train.type}</span>
                 `;
-                
-                trainItem.onclick = function() {
-                    document.querySelectorAll('.train-item').forEach(el => el.classList.remove('active-selection'));
-                    trainItem.classList.add('active-selection');
-                    map.setView([train.lat, train.lng], 10, { animate: true });
-                    if(markerRegistry[train.symbol]) {
-                        markerRegistry[train.symbol].openPopup();
-                    }
-                };
-                subContent.appendChild(trainItem);
-
-                const labelHTML = `<div class="depot-tag ${colorClass}">${train.dir} ${train.symbol}</div>`;
-                const depotIcon = L.divIcon({ html: labelHTML, className: 'clear-container', iconAnchor: [35, 10] });
+                subContent.appendChild(card);
 
                 const infoCardHTML = `
-                    <div class="popup-title">TELEMETRY DATA SHEET: ${train.symbol}</div>
-                    <table class="popup-table">
+                    <div style="background:${getTrainColor(train.dir)}; height:4px; border-radius:4px 4px 0 0;"></div>
+                    <table class="popup-tbl">
+                        <tr><td class="popup-lbl">SYMBOL</td><td style="font-weight:bold; color:#fff;">${train.symbol}</td></tr>
+                        <tr><td class="popup-lbl">LEAD UNIT</td><td>${train.leadLoco}</td></tr>
                         <tr><td class="popup-lbl">SUBDIVISION</td><td>${train.subdivision}</td></tr>
-                        <tr><td class="popup-lbl">CONTROL SYS</td><td>${train.type === 'PLAYER' ? 'MANNED' : 'AUTONOMOUS AI'}</td></tr>
-                        <tr><td class="popup-lbl">LEAD LOCO #</td><td>${train.leadLoco}</td></tr>
-                        <tr><td class="popup-lbl">OPERATOR ID</td><td>${train.crew}</td></tr>
                         <tr><td class="popup-lbl">SPEED</td><td>${train.speed} MPH</td></tr>
                         <tr><td class="popup-lbl">FEET</td><td>${train.length.toLocaleString()} FT</td></tr>
                         <tr><td class="popup-lbl">NET TONNAGE</td><td>${train.weight.toLocaleString()} TNS</td></tr>
@@ -143,3 +222,6 @@
         processTrackerData(document.getElementById('trainSearch').value); 
     }
 </script>
+
+</body>
+</html>
