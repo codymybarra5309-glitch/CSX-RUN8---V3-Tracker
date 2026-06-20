@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALS Train Tracker - RUN8 V-III (Clean Base Build)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        /* 2000s Intranet Corporate Palette (CSX Theme) */
+        :root {
+            --csx-blue: #1A1846;        
+            --csx-yellow: #FFEA00;      
+            --win-gray: #D4D0C8;        
+            --panel-bg: #2C3545;        
+            --text-main: #FFFFFF;
+            --text-dark: #000000;
+            --sidebar-width: 320px;
+        }
+
+        [data-theme="light"] {
+            --panel-bg: #1A1846;        
+            --text-main: #FFFFFF;       
+        }
+
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; font-family: Tahoma, Arial, sans-serif; font-size: 11px; display: flex; flex-direction: column; background: #557A95; overflow: hidden; }
+        
+        #top-header {
+            height: 55px; 
+            background: linear-gradient(to bottom, #2A3F6D 0%, #111B35 100%);
+            border-bottom: 4px solid var(--csx-yellow); 
+            display: flex; justify-content: space-between; align-items: center; padding: 0 10px; z-index: 3000;
+            box-shadow: 0px 3px 5px rgba(0,0,0,0.5);
+        }
+        .header-branding { display: flex; align-items: center; gap: 15px; }
+        
+        .csx-text-logo {
+            font-family: "Impact", "Arial Black", sans-serif;
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--csx-yellow);
+            letter-spacing: -1px;
+            text-shadow: 2px 2px 0px #000000;
+            line-height: 1;
+            user-select: none;
+        }
+        
+        .header-title h1 { margin: 0; font-size: 16px; font-weight: bold; color: #FFFFFF; font-family: Arial, sans-serif; text-shadow: 1px 1px #000; }
+        .header-title p { margin: 2px 0 0 0; font-size: 10px; color: var(--csx-yellow); font-weight: bold; letter-spacing: 1px; }
+
+        #workspace { display: flex; flex: 1; width: 100%; height: calc(100% - 75px); background: #333; position: relative; }
+
+        #sidebar { 
+            width: var(--sidebar-width); 
+            height: 100%; 
+            background: var(--panel-bg); 
+            border-right: 3px inset #777; 
+            display: flex; 
+            flex-direction: column; 
+            z-index: 2000; 
+            box-sizing: border-box; 
+            transition: transform 0.25s cubic-bezier(0.1, 0.9, 0.2, 1);
+            position: relative;
+        }
+        
+        #workspace.sidebar-collapsed #sidebar {
+            transform: translateX(-100%);
+        }
+        
+        #sidebar-toggle {
+            position: absolute;
+            top: 50%;
+            right: -18px;
+            transform: translateY(-50%);
+            width: 15px;
+            height: 50px;
+            background: #D4D0C8;
+            border: 2px outset #FFF;
+            border-left: none;
+            cursor: pointer;
+            z-index: 2500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: bold;
+            color: #000;
+            user-select: none;
+            box-shadow: 2px 2px 4px rgba(0,0,0,0.4);
+        }
+        #sidebar-toggle:active {
+            background: #B5B2AC;
+        }
+
+        .search-box-wrapper { padding: 8px; background: #111622; border-bottom: 2px inset #111; color: #FFF; }
+        .search-box-wrapper label { font-weight: bold; display: block; margin-bottom: 4px; color: var(--csx-yellow); font-size: 10px; text-transform: uppercase; }
+        .search-input { width: 100%; padding: 4px; border: 2px inset #FFF; background: #FFFFFF; color: #000000; font-family: monospace; font-size: 12px; font-weight: bold; box-sizing: border-box; }
+        
+        .sub-list-container { flex: 1; overflow-y: scroll; padding: 6px; }
+        .sub-group { border: 2px outset #FFF; margin-bottom: 6px; background: #151D2A; }
+        .sub-header { background: linear-gradient(to right, #0F1726, #1E293B); padding: 6px 8px; font-size: 11px; font-weight: bold; color: #FFFFFF; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+        .train-count { background: #000; color: #00FF00; padding: 1px 5px; font-family: monospace; font-size: 11px; border: 1px inset #555; }
+        
+        .sub-content { display: block; }
+        .train-item { padding: 6px 12px; font-family: "Courier New", monospace; font-size: 12px; color: #E0E0E0; border-bottom: 1px solid #1E2530; cursor: pointer; display: flex; justify-content: space-between; align-items: center; position: relative; }
+        .train-item:hover { background: #2A3D63; color: var(--csx-yellow); }
+        .train-symbol-txt { font-weight: bold; color: #FFF; }
+        .train-crew-txt { color: #A0AEC0; font-size: 11px; }
+        
+        .train-item.active-selection {
+            background: #111622 !important;
+            color: var(--csx-yellow) !important;
+            border-left: 4px solid var(--csx-yellow);
+            font-weight: bold;
+        }
+        .train-item.active-selection::before {
+            content: '▶';
+            position: absolute;
+            left: 3px;
+            color: var(--csx-yellow);
+            font-size: 8px;
+        }
+        
+        .map-container { 
+            position: absolute;
+            top: 0; left: var(--sidebar-width); right: 0; bottom: 0;
+            border-left: 2px outset #FFF; 
+            transition: left 0.25s cubic-bezier(0.1, 0.9, 0.2, 1);
+        }
+        #workspace.sidebar-collapsed .map-container {
+            left: 0;
+        }
+        #map { width: 100%; height: 100%; background-color: #000; }
+
+        .global-analytics-hud {
+            position: absolute; top: 0; left: 0; right: 0;
+            background: linear-gradient(to bottom, #2C3E50, #1A252F); border-bottom: 2px outset #555;
+            padding: 6px 15px; color: #FFFFFF; z-index: 1000;
+            font-size: 11px; display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 3px 5px rgba(0,0,0,0.3);
+        }
+        .analytics-group-left { display: flex; gap: 20px; }
+        .analytics-stat { display: flex; align-items: center; gap: 6px; background: #111; padding: 3px 8px; border: 1px inset #444; }
+        .stat-lbl { color: #A0B0C0; font-size: 10px; font-weight: bold; }
+        .stat-val { font-size: 11px; font-weight: bold; font-family: "Courier New", monospace; color: #00FF00; }
+        
+        .simulation-disclaimer-tag { font-size: 10px; color: #FF3333; font-weight: bold; letter-spacing: 0.5px; animation: blink 1.5s infinite; }
+        @keyframes blink { 0% { opacity: 1.0; } 50% { opacity: 0.4; } 100% { opacity: 1.0; } }
+
+        .depot-tag { font-family: "Courier New", monospace; font-size: 12px; font-weight: bold; color: #FFFFFF; padding: 3px 6px; white-space: nowrap; cursor: pointer; display: inline-block; border: 2px outset #FFF; position: relative; transition: all 0.2s ease; }
+        
+        .tag-active-target {
+            outline: 2px solid #00FF00;
+            box-shadow: 0 0 10px #00FF00;
+        }
+        .tag-active-target::before, .tag-active-target::after {
+            content: '';
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-color: #00FF00;
+            border-style: solid;
+            pointer-events: none;
+            animation: targetLock 0.4s ease-out forwards;
+        }
+        .tag-active-target::before { top: -8px; left: -8px; border-width: 3px 0 0 3px; }
+        .tag-active-target::after { bottom: -8px; right: -8px; border-width: 0 3px 3px 0; }
+        @keyframes targetLock {
+            0% { transform: scale(1.6); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .tag-stopped { background-color: #990000; text-shadow: 1px 1px #000; }       
+        .tag-moving-player { background-color: #006633; text-shadow: 1px 1px #000; } 
+        .tag-moving-ai { background-color: #0044AA; text-shadow: 1px 1px #000; }     
+
+        .depot-popup .leaflet-popup-content-wrapper { background: #D4D0C8; color: #000000; border: 2px outset #FFF; border-radius: 0px; font-size: 11px; box-shadow: 3px 3px 5px rgba(0,0,0,0.5); padding: 1px; }
+        .depot-popup .leaflet-popup-tip { background: #D4D0C8; border: 1px solid #777; }
+        .popup-title { font-size: 11px; font-weight: bold; background: #0A246A; color: #FFF; padding: 3px 6px; margin: -14px -14px 8px -14px; font-family: Tahoma, sans-serif; }
+        .popup-table { width: 100%; border-collapse: collapse; margin-top: 5px; font-family: "Courier New", monospace; }
+        .popup-table td { border: 1px solid #808080; padding: 2px 4px; background: #FFF; }
+        .popup-lbl { font-weight: bold; background: #E4E4E4 !important; color: #000; }
+
+        .theme-btn { background: #D4D0C8; color: #000; border: 2px outset #FFF; padding: 2px 8px; font-size: 10px; font-weight: bold; cursor: pointer; font-family: Tahoma, sans-serif; }
+        .theme-btn:active { border-style: inset; background: #B5B2AC; }
+
+        #marquee-footer { 
+            height: 20px; 
+            background: #000000; 
+            color: #00FF00; 
+            font-family: monospace; 
+            font-size: 12px; 
+            display: flex; 
+            align-items: center; 
+            border-top: 2px solid var(--csx-yellow); 
+            box-sizing: border-box;
+            overflow: hidden; 
+            position: relative;
+        }
+        
+        .ticker-wrap { width: 100%; overflow: hidden; white-space: nowrap; display: flex; align-items: center; }
+        .ticker-text { display: inline-block; padding-left: 100%; animation: continuousTicker 25s linear infinite; font-weight: bold; }
+        @keyframes continuousTicker { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-100%, 0, 0); } }
+    </style>
+</head>
+<body>
+
+    <div id="top-header">
+        <div class="header-branding">
+            <div class="csx-text-logo">CSX</div>
+            <div class="header-title">
+                <h1>ALS Train Tracker - RUN8 V-III</h1>
+                <p>ONLINE TERMINAL // SYSTEM SUBDIVISION TELEMETRY FEED</p>
+            </div>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">MONO LIGHT MODE</button>
+        </div>
+    </div>
+
+    <div id="workspace">
+        <div id="sidebar">
+            <div id="sidebar-toggle" onclick="toggleSidebar()">◀</div>
+            
+            <div class="search-box-wrapper">
+                <label for="trainSearch">Execute Query Filter:</label>
+                <input type="text" id="trainSearch" class="search-input" placeholder="Type Symbol (e.g. Q452)..." oninput="filterTrains()">
+            </div>
+            <div class="sub-list-container" id="accordionContainer"></div>
+        </div>
+
+        <div class="map-container">
+            <div class="global-analytics-hud">
+                <div class="analytics-group-left">
+                    <div class="analytics-stat"><span class="stat-lbl">TOTAL TRAINS:</span><span class="stat-val" id="hudTotal">0</span></div>
+                    <div class="analytics-stat"><span class="stat-lbl">MOVING:</span><span class="stat-val" style="color: #00FF00;" id="hudMoving">0</span></div>
+                    <div class="analytics-stat"><span class="stat-lbl">STOPPED:</span><span class="stat-val" style="color: #FF3333;" id="hudStopped">0</span></div>
+                    <div class="analytics-stat"><span class="stat-lbl">NET LIN_FT:</span><span class="stat-val" id="hudFootage">0 FT</span></div>
+                    <div class="analytics-stat"><span class="stat-lbl">NET TONNAGE:</span><span class="stat-val" id="hudTonnage">0 TNS</span></div>
+                </div>
+                
+                <div class="simulation-disclaimer-tag">
+                    [!] GAMING INTENTION ONLY - NOT A REAL TIME TRACKING DEVICE
+                </div>
+            </div>
+
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <div id="marquee-footer">
+        <div class="ticker-wrap">
+            <div class="ticker-text">
+                SYSTEM ONLINE // CORE FEED SYNCED OK // RUN8 V-III DISTRIBUTOR CONNECTED // CSX SECURITY LAYER VALIDATED // USE TERMINAL CONTROLS ON LEFT WINDOW PANELS...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const map = L.map('map', { zoomControl: true, maxZoom: 18, minZoom: 7 }).setView([30.9500, -82.0000], 8);
+        let tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        map.zoomControl.setPosition('bottomright');
+
+        const trainLayerGroup = L.layerGroup().addTo(map);
+        let markerRegistry = {};
+
+        // Empty tracking database ready to receive background application socket feeds
+        const activeServerData = [];
+
+        function toggleSidebar() {
+            const workspace = document.getElementById('workspace');
+            const toggleBtn = document.getElementById('sidebar-toggle');
+            workspace.classList.toggle('sidebar-collapsed');
+            toggleBtn.innerText = workspace.classList.contains('sidebar-collapsed') ? "▶" : "◀";
+            setTimeout(() => { map.invalidateSize(); }, 260);
+        }
+
+        function getTrainColorClass(speed, crewType) {
+            if (speed === 0) return "tag-stopped"; 
+            if (crewType === "PLAYER") return "tag-moving-player"; 
+            return "tag-moving-ai"; 
+        }
+
+        function updateGlobalHUD(filteredData) {
+            let total = filteredData.length, moving = 0, stopped = 0, footage = 0, tonnage = 0;
+            filteredData.forEach(train => {
+                if (train.speed > 0) moving++; else stopped++;
+                footage += train.length; tonnage += train.weight;
+            });
+            document.getElementById('hudTotal').innerText = total;
+            document.getElementById('hudMoving').innerText = moving;
+            document.getElementById('hudStopped').innerText = stopped;
+            document.getElementById('hudFootage').innerText = footage.toLocaleString() + " FT";
+            document.getElementById('hudTonnage').innerText = tonnage.toLocaleString() + " TNS";
+        }
+
+        function processTrackerData(searchQuery = "") {
+            trainLayerGroup.clearLayers();
+            markerRegistry = {};
+            const accordionContainer = document.getElementById('accordionContainer');
+            accordionContainer.innerHTML = '';
+
+            const filteredTrains = activeServerData.filter(t => !searchQuery || t.symbol.toLowerCase().includes(searchQuery.toLowerCase()));
+            updateGlobalHUD(filteredTrains);
+
+            const groupedSubdivisions = {};
+            filteredTrains.forEach(t => {
+                if (!groupedSubdivisions[t.subdivision]) groupedSubdivisions[t.subdivision] = [];
+                groupedSubdivisions[t.subdivision].push(t);
+            });
+
+            Object.keys(groupedSubdivisions).forEach(subName => {
+                const trains = groupedSubdivisions[subName];
+                const subGroup = document.createElement('div');
+                subGroup.className = 'sub-group';
+
+                const subHeader = document.createElement('div');
+                subHeader.className = 'sub-header';
+                subHeader.innerHTML = `<span>${subName}</span> <span class="train-count">${trains.length}</span>`;
+                subGroup.appendChild(subHeader);
+
+                const subContent = document.createElement('div');
+                subContent.className = 'sub-content';
+
+                trains.forEach(train => {
+                    const colorClass = getTrainColorClass(train.speed, train.type);
+                    const trainItem = document.createElement('div');
+                    trainItem.className = 'train-item';
+                    
+                    let speedColor = train.speed > 0 ? (train.type === "PLAYER" ? "#00FF00" : "#66CCFF") : "#FF3333";
+
+                    trainItem.innerHTML = `
+                        <div><span class="train-symbol-txt">${train.symbol}</span><span class="train-crew-txt">[Loco: ${train.leadLoco}]</span></div>
+                        <span style="color: ${speedColor}; font-weight: bold;">${train.speed === 0 ? 'STOP' : train.speed + ' MPH'}</span>
+                    `;
+                    
+                    trainItem.onclick = function() {
+                        document.querySelectorAll('.train-item').forEach(el => el.classList.remove('active-selection'));
+                        Object.keys(markerRegistry).forEach(sym => {
+                            const node = markerRegistry[sym].getElement();
+                            if (node && node.querySelector('.depot-tag')) node.querySelector('.depot-tag').classList.remove('tag-active-target');
+                        });
+
+                        trainItem.classList.add('active-selection');
+                        map.setView([train.lat, train.lng], 10, { animate: true });
+                        
+                        if(markerRegistry[train.symbol]) {
+                            markerRegistry[train.symbol].openPopup();
+                            map.panTo([train.lat, train.lng]);
+                            const el = markerRegistry[train.symbol].getElement();
+                            if (el && el.querySelector('.depot-tag')) el.querySelector('.depot-tag').classList.add('tag-active-target');
+                        }
+                    };
+                    subContent.appendChild(trainItem);
+
+                    const labelHTML = `<div class="depot-tag ${colorClass}">${train.dir} ${train.symbol}</div>`;
+                    const depotIcon = L.divIcon({ html: labelHTML, className: 'clear-container', iconAnchor: [35, 10] });
+
+                    const infoCardHTML = `
+                        <div class="popup-title">TELEMETRY DATA SHEET: ${train.symbol}</div>
+                        <table class="popup-table">
+                            <tr><td class="popup-lbl">SUBDIVISION</td><td>${train.subdivision}</td></tr>
+                            <tr><td class="popup-lbl">CONTROL SYS</td><td>${train.type === 'PLAYER' ? 'MANNED' : 'AUTONOMOUS AI'}</td></tr>
+                            <tr><td class="popup-lbl">LEAD LOCO #</td><td>${train.leadLoco}</td></tr>
+                            <tr><td class="popup-lbl">OPERATOR ID</td><td>${train.crew}</td></tr>
+                            <tr><td class="popup-lbl">SPEED</td><td>${train.speed} MPH</td></tr>
+                            <tr><td class="popup-lbl">FEET</td><td>${train.length.toLocaleString()} FT</td></tr>
+                            <tr><td class="popup-lbl">NET TONNAGE</td><td>${train.weight.toLocaleString()} TNS</td></tr>
+                        </table>
+                    `;
+
+                    const marker = L.marker([train.lat, train.lng], { icon: depotIcon })
+                        .addTo(trainLayerGroup)
+                        .bindPopup(infoCardHTML, { className: 'depot-popup', closeButton: false, offset: [0, -5], autoPan: false });
+                    
+                    markerRegistry[train.symbol] = marker;
+                });
+
+                subGroup.appendChild(subContent);
+                accordionContainer.appendChild(subGroup);
+            });
+            
+            map.on('popupclose', function() {
+                document.querySelectorAll('.train-item').forEach(el => el.classList.remove('active-selection'));
+                Object.keys(markerRegistry).forEach(sym => {
+                    const node = markerRegistry[sym].getElement();
+                    if (node && node.querySelector('.depot-tag')) node.querySelector('.depot-tag').classList.remove('tag-active-target');
+                });
+            });
+        }
+
+        function filterTrains() { processTrackerData(document.getElementById('trainSearch').value); }
+
+        function toggleTheme() {
+            const currentTheme = document.body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.body.setAttribute('data-theme', newTheme);
+            document.getElementById('themeBtn').innerText = newTheme === 'light' ? 'MONO DARK MODE' : 'MONO LIGHT MODE';
+            map.removeLayer(tileLayer);
+            tileLayer = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${newTheme === 'light' ? 'light_all' : 'dark_all'}/{z}/{x}/{y}{r}.png`).addTo(map);
+            processTrackerData(document.getElementById('trainSearch').value); 
+        }
+
+        processTrackerData();
+    </script>
+</body>
+</html>
