@@ -1,0 +1,15 @@
+[
+  {
+    "symbol": "Q452-19",
+    "subdivision": "WAYCROSS",
+    "type": "AI",
+    "leadLoco": "CSX 502",
+    "crew": "SYSTEM_AUTO",
+    "speed": 45,
+    "length": 8450,
+    "weight": 12400,
+    "dir": "EB",
+    "lat": 30.9500,
+    "lng": -82.0000
+  }
+]
